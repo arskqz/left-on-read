@@ -1,0 +1,22 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Data
+real_data/
+
+# working versions
+*.dsproj
+
+# Plans
+dataformatter_design.pdf
+Dataset formatter - Plan.md
+Subtitle importer - Plan.md
+

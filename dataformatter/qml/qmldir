@@ -1,0 +1,4 @@
+singleton Theme 1.0 Theme.qml
+StartScreen 1.0 StartScreen.qml
+ReviewScreen 1.0 ReviewScreen.qml
+FinderScreen 1.0 FinderScreen.qml

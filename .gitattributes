@@ -1,0 +1,2 @@
+# Sample datasets are byte-exact round-trip fixtures: never convert line endings.
+samples/** -text
