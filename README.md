@@ -1,4 +1,4 @@
-# dataformatter
+# Left on Read
 
 A local desktop tool for reviewing and editing chat-format fine-tuning datasets,
 so you don't have to scroll through 20k+ lines of JSON.
@@ -30,8 +30,8 @@ Requires [uv](https://docs.astral.sh/uv/) (Python 3.11+ is installed automatical
 
 ```sh
 uv sync
-uv run dataformatter                              # start the app
-uv run dataformatter check path/to/dataset.json   # command-line check
+uv run leftonread                              # start the app
+uv run leftonread check path/to/dataset.json   # command-line check
 ```
 
 The UI is Qt Quick (QML) via PySide6. `check` reports the detected schema and formatting, lists validation warnings,
@@ -45,10 +45,10 @@ uv run pytest tests/test_io.py -k sharegpt     # a subset
 ```
 
 To check your own datasets without committing them, list them in
-`DATAFORMATTER_ROUNDTRIP_FILES`, separated by `;` on Windows or `:` elsewhere:
+`LEFTONREAD_ROUNDTRIP_FILES`, separated by `;` on Windows or `:` elsewhere:
 
 ```sh
-DATAFORMATTER_ROUNDTRIP_FILES=/path/to/a.json uv run pytest tests/test_io.py
+LEFTONREAD_ROUNDTRIP_FILES=/path/to/a.json uv run pytest tests/test_io.py
 ```
 
 ## License

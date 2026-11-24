@@ -54,21 +54,44 @@ class ConversationListModel(QAbstractListModel):
         self._rows: list[_Row] = []
         self._row_of: dict[int, int] = {}
 
-    def reset(self, project: Project | None) -> None:
+    def reset(self, project: Project | None, statuses: Iterable[str] | None = None) -> None:
+        """Load the conversations with the given statuses (all if None).
+
+        The filter applies only here: a conversation whose status changes
+        later stays in the list until the next reset, so a review pass does
+        not shift rows under the user."""
         self.beginResetModel()
-        self._rows = [_row(c) for c in project.conversations()] if project is not None else []
+        self._rows = [_row(c) for c in project.conversations(statuses)] if project is not None else []
         self._row_of = {r.conversation_id: i for i, r in enumerate(self._rows)}
         self.endResetModel()
 
     def refresh(self, project: Project, ids: Iterable[int]) -> None:
-        """Re-read the given conversations after they changed."""
+        """Re-read the given conversations after they changed. Rows whose
+        conversation no longer exists (an undone "new conversation") are removed."""
         for cid in ids:
             row = self._row_of.get(cid)
             if row is None:
                 continue
-            self._rows[row] = _row(project.get(cid))
+            try:
+                conv = project.get(cid)
+            except KeyError:
+                self.beginRemoveRows(QModelIndex(), row, row)
+                del self._rows[row]
+                self._row_of = {r.conversation_id: i for i, r in enumerate(self._rows)}
+                self.endRemoveRows()
+                continue
+            self._rows[row] = _row(conv)
             index = self.index(row)
             self.dataChanged.emit(index, index)
+
+    def append(self, project: Project, conversation_id: int) -> int:
+        """Add a new conversation as the last row, whatever the queue filter. Returns the row."""
+        row = len(self._rows)
+        self.beginInsertRows(QModelIndex(), row, row)
+        self._rows.append(_row(project.get(conversation_id)))
+        self._row_of[conversation_id] = row
+        self.endInsertRows()
+        return row
 
     def row_of(self, conversation_id: int) -> int:
         return self._row_of.get(conversation_id, -1)

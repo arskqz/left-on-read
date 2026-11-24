@@ -5,9 +5,9 @@ from pathlib import Path
 import pytest
 
 from conftest import SAMPLE_FILES
-from dataformatter.core import io
-from dataformatter.core.io import DatasetLoadError, FileFormat
-from dataformatter.core.schema import OPENAI, SchemaDetectionError
+from leftonread.core import io
+from leftonread.core.io import DatasetLoadError, FileFormat
+from leftonread.core.schema import OPENAI, SchemaDetectionError
 
 
 def roundtrip(path: Path, out: Path) -> io.Dataset:
@@ -101,12 +101,12 @@ def test_atomic_write_leaves_no_temp_files(tmp_path):
 
 
 # Your own datasets (e.g. a real training file) can be checked without
-# committing them: set DATAFORMATTER_ROUNDTRIP_FILES to paths separated by
+# committing them: set LEFTONREAD_ROUNDTRIP_FILES to paths separated by
 # os.pathsep (";" on Windows, ":" elsewhere) and run pytest.
-_EXTRA = [Path(p) for p in os.environ.get("DATAFORMATTER_ROUNDTRIP_FILES", "").split(os.pathsep) if p]
+_EXTRA = [Path(p) for p in os.environ.get("LEFTONREAD_ROUNDTRIP_FILES", "").split(os.pathsep) if p]
 
 
-@pytest.mark.skipif(not _EXTRA, reason="DATAFORMATTER_ROUNDTRIP_FILES not set")
+@pytest.mark.skipif(not _EXTRA, reason="LEFTONREAD_ROUNDTRIP_FILES not set")
 @pytest.mark.parametrize("path", _EXTRA, ids=lambda p: p.name)
 def test_local_files_round_trip(path, tmp_path):
     out = tmp_path / path.name

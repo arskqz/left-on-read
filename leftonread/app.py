@@ -6,13 +6,13 @@ import sys
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QSettings, QUrl
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 
 from .bridge.backend import Backend
-from .bridge.settings import AppSettings
+from .bridge.settings import LEGACY_NAME, AppSettings, default_backdrops_dir, migrate_legacy_settings
 
 QML_DIR = Path(__file__).resolve().parent / "qml"
 CONTROLS_STYLE = "Basic"  # the only built-in style that fully follows our colours
@@ -35,8 +35,15 @@ def create_engine(
 
 def run() -> int:
     app = QGuiApplication(sys.argv)
-    app.setOrganizationName("dataformatter")
-    app.setApplicationName("dataformatter")
+    app.setOrganizationName("leftonread")
+    app.setApplicationName("leftonread")
+    backdrops = default_backdrops_dir()  # <base>/<org>/<app>/backdrops
+    migrate_legacy_settings(
+        QSettings(),
+        QSettings(LEGACY_NAME, LEGACY_NAME),
+        backdrops,
+        backdrops.parents[2] / LEGACY_NAME / LEGACY_NAME / "backdrops",
+    )
     settings = AppSettings()
     backend = Backend(settings=settings)
     engine = create_engine(backend, settings)

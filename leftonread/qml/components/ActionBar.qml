@@ -3,17 +3,19 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import ".."
 
-// Edit | Keep | Archive | Skip | Tag | Controls
+// Edit | Keep | Archive | Skip | Tag | New | Controls
 RowLayout {
     id: root
 
     property bool editing: false
     property bool hasConversation: false
+    property bool hasProject: false
 
     signal editToggled()
     signal keepRequested()
     signal archiveRequested()
     signal skipRequested()
+    signal newRequested()
 
     spacing: 8
 
@@ -50,6 +52,12 @@ RowLayout {
         tip: qsTr("Tagging arrives in Phase 3")
     }
     ThemedButton {
+        text: qsTr("New (N)")
+        enabled: root.hasProject
+        tip: qsTr("Start a blank conversation (one empty user turn). Undo with Ctrl+Z.")
+        onClicked: root.newRequested()
+    }
+    ThemedButton {
         text: qsTr("Controls")
         tip: qsTr("Keyboard shortcuts")
         onClicked: keysPopup.opened ? keysPopup.close() : keysPopup.open()
@@ -74,8 +82,12 @@ RowLayout {
                         ["← / A", qsTr("Archive")],
                         ["S", qsTr("Skip")],
                         ["↑ / ↓", qsTr("Previous / next conversation")],
+                        ["N", qsTr("New conversation")],
                         ["E / Ctrl+E", qsTr("Start / stop editing")],
                         ["Tab / ↑ ↓", qsTr("Next / previous turn (editing)")],
+                        ["Ctrl+Enter", qsTr("Add turn below (editing)")],
+                        ["Alt+↑ / Alt+↓", qsTr("Move turn up / down (editing)")],
+                        ["1 – 4", qsTr("Archive reason (right after archiving)")],
                         ["Ctrl+D", qsTr("Delete turn (editing)")],
                         ["Ctrl+Z", qsTr("Undo")]
                     ]

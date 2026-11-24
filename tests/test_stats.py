@@ -1,5 +1,5 @@
-from dataformatter.core.model import Conversation, Message
-from dataformatter.core.stats import conversation_stats
+from leftonread.core.model import Conversation, Message
+from leftonread.core.stats import conversation_stats
 
 
 def test_conversation_stats_counts_per_role():

@@ -106,7 +106,7 @@ def load(path: str | os.PathLike, schema: SchemaSpec | None = None) -> Dataset:
     """Read a dataset file. Detects the schema unless one is given.
 
     Raises DatasetLoadError for unreadable files and
-    :class:`~dataformatter.core.schema.SchemaDetectionError` when the schema
+    :class:`~leftonread.core.schema.SchemaDetectionError` when the schema
     is unclear (the caller should then ask the user and pass ``schema``).
     """
     data = Path(path).read_bytes()

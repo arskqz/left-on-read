@@ -30,6 +30,12 @@ RowLayout {
     function keep() { commit(); backend.keep() }
     function archive() { commit(); backend.archive() }
     function skip() { commit(); backend.skip() }
+    // Blank conversation (one empty user turn), opened for editing.
+    function newConversation() {
+        commit()
+        backend.newConversation()
+        setEditing(true)
+    }
     function move(step) { commit(); backend.setCurrentRow(backend.currentRow + step) }
     function setEditing(on) {
         commit()
@@ -46,6 +52,29 @@ RowLayout {
         })
     }
 
+    // Swap turn `index` with its neighbour; the cursor follows the moved turn.
+    function moveTurn(index, step) {
+        commit()
+        backend.moveMessage(index, step)
+        Qt.callLater(() => messageView.focusTurn(index + step, step, false))
+    }
+    function insertTurn(index, role) {
+        commit()
+        backend.insertMessage(index, role)
+        Qt.callLater(() => messageView.focusTurn(index, 1, false))
+    }
+    // Adds a turn after the focused one, or at the end when none has focus.
+    function insertAfterCurrent() {
+        const cur = messageView.currentTurn
+        if (cur >= 0 && cur < messageView.count) {
+            const item = messageView.itemAtIndex(cur)
+            insertTurn(cur + 1, messageView.nextRole(item ? item.role : ""))
+        } else {
+            const last = messageView.itemAtIndex(messageView.count - 1)
+            insertTurn(messageView.count, messageView.nextRole(last ? last.role : ""))
+        }
+    }
+
     objectName: "reviewScreen"
     spacing: Theme.gap
 
@@ -55,6 +84,12 @@ RowLayout {
     Shortcut { sequence: "E"; enabled: root.reviewKeys; onActivated: root.setEditing(true) }
     Shortcut { sequence: "Up"; enabled: root.reviewKeys; onActivated: root.move(-1) }
     Shortcut { sequence: "Down"; enabled: root.reviewKeys; onActivated: root.move(1) }
+    // Also works when the queue is empty, so not tied to reviewKeys.
+    Shortcut {
+        sequence: "N"
+        enabled: root.visible && !root.typing && !root.editing && backend.hasProject
+        onActivated: root.newConversation()
+    }
 
     Shortcut { sequence: "Ctrl+E"; enabled: root.visible && root.hasConversation; onActivated: root.setEditing(!root.editing) }
     Shortcut { sequences: ["Down", "Tab"]; enabled: root.turnKeys; onActivated: messageView.focusTurn(0, 1, false) }
@@ -64,6 +99,22 @@ RowLayout {
         enabled: root.visible && root.editing && root.inEditor && messageView.currentTurn >= 0
         onActivated: root.deleteTurn(messageView.currentTurn)
     }
+    Shortcut {
+        sequence: "Alt+Up"
+        enabled: root.visible && root.editing && root.inEditor && messageView.currentTurn > 0
+        onActivated: root.moveTurn(messageView.currentTurn, -1)
+    }
+    Shortcut {
+        sequence: "Alt+Down"
+        enabled: root.visible && root.editing && root.inEditor && messageView.currentTurn >= 0
+                 && messageView.currentTurn < messageView.count - 1
+        onActivated: root.moveTurn(messageView.currentTurn, 1)
+    }
+    Shortcut {
+        sequences: ["Ctrl+Return", "Ctrl+Enter"]
+        enabled: root.visible && root.editing
+        onActivated: root.insertAfterCurrent()
+    }
 
     Sidebar {
         title: qsTr("Conversations")
@@ -72,8 +123,17 @@ RowLayout {
         Layout.fillHeight: true
         Layout.preferredWidth: implicitWidth
 
-        ConversationList {
+        ColumnLayout {
             anchors.fill: parent
+            spacing: 8
+
+            QueueSelector {
+                Layout.fillWidth: true
+            }
+            ConversationList {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+            }
         }
     }
 
@@ -99,20 +159,39 @@ RowLayout {
                 anchors.margins: 16
                 editing: root.editing
                 onDeleteRequested: (index) => root.deleteTurn(index)
+                onInsertRequested: (index, role) => root.insertTurn(index, role)
+                onMoveRequested: (index, step) => root.moveTurn(index, step)
             }
 
             Label {
                 anchors.centerIn: parent
                 visible: !root.hasConversation
-                text: qsTr("This project has no conversations.")
+                text: backend.totalCount > 0 ? qsTr("No conversations in this queue.")
+                                             : qsTr("This project has no conversations.")
                 color: Theme.textDim
+            }
+
+            ArchiveReasonToast {
+                id: reasonToast
+                objectName: "reasonToast"
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 14
+                keysEnabled: root.visible && !root.typing
+            }
+            Connections {
+                target: backend
+                function onArchived(id) { reasonToast.show(id) }
+                function onProjectChanged() { reasonToast.dismiss() }
             }
         }
 
         ActionBar {
             editing: root.editing
             hasConversation: root.hasConversation
+            hasProject: backend.hasProject
             Layout.alignment: Qt.AlignHCenter
+            onNewRequested: root.newConversation()
             onEditToggled: root.setEditing(!root.editing)
             onKeepRequested: root.keep()
             onArchiveRequested: root.archive()
