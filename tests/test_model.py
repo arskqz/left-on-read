@@ -1,4 +1,4 @@
-from dataformatter.core.model import Conversation, Message, validate
+from leftonread.core.model import Conversation, Message, validate
 
 
 def conv(*pairs):

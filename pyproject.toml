@@ -1,5 +1,5 @@
 [project]
-name = "dataformatter"
+name = "leftonread"
 version = "0.1.0"
 description = "Local desktop tool for reviewing and editing chat-format fine-tuning datasets"
 readme = "README.md"
@@ -10,7 +10,7 @@ dependencies = [
 ]
 
 [project.scripts]
-dataformatter = "dataformatter.main:main"
+leftonread = "leftonread.main:main"
 
 [build-system]
 requires = ["hatchling"]

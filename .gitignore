@@ -16,7 +16,10 @@ real_data/
 *.dsproj
 
 # Plans
-dataformatter_design.pdf
-Dataset formatter - Plan.md
+leftonread_design.pdf
+Left on Read - Plan.md
 Subtitle importer - Plan.md
 
+
+# Local assistant notes
+CLAUDE.md

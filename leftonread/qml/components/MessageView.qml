@@ -12,6 +12,13 @@ ListView {
     property bool showSystem: false
     property int currentTurn: -1  // turn whose text field last had focus
     signal deleteRequested(int index)
+    signal insertRequested(int index, string role)
+    signal moveRequested(int index, int step)
+
+    // Role for a turn added after one with `role`: turns alternate user / assistant.
+    function nextRole(role) {
+        return role === "user" ? "assistant" : "user"
+    }
 
     // Put the cursor in turn `index`, or the nearest visible turn in direction `step` (+1 / -1).
     // Returns false if there is none, so the caller can keep the key for normal cursor movement.
@@ -38,6 +45,46 @@ ListView {
     model: backend.messages
     boundsBehavior: Flickable.StopAtBounds
     ScrollBar.vertical: ScrollBar {}
+
+    // Edit mode: add a turn at the end, choosing its role.
+    footer: RowLayout {
+        visible: view.editing
+        height: visible ? implicitHeight + 18 : 0
+        x: 4
+        width: view.width - 20
+        spacing: 16
+
+        Label {
+            text: qsTr("Add turn:")
+            font.pixelSize: 11
+            color: Theme.textDim
+            Layout.alignment: Qt.AlignBottom
+        }
+        Repeater {
+            model: ["user", "assistant", "system"]
+
+            Label {
+                id: addLabel
+                required property string modelData
+                text: "+ " + modelData
+                font.pixelSize: 11
+                font.capitalization: Font.AllUppercase
+                font.letterSpacing: 1
+                font.bold: true
+                color: addArea.containsMouse ? settings.highlightColor : Theme.textDim
+                Layout.alignment: Qt.AlignBottom
+
+                MouseArea {
+                    id: addArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: view.insertRequested(view.count, addLabel.modelData)
+                }
+            }
+        }
+        Item { Layout.fillWidth: true }
+    }
 
     delegate: ColumnLayout {
         id: msg
@@ -92,6 +139,52 @@ ListView {
                 color: Theme.textDim
             }
             Item { Layout.fillWidth: true }
+            Repeater {
+                // Move up / down
+                model: view.editing ? [[-1, "↑", qsTr("Move this turn up (Alt+↑)")],
+                                       [1, "↓", qsTr("Move this turn down (Alt+↓)")]] : []
+
+                Label {
+                    id: moveLabel
+                    required property var modelData
+                    readonly property int step: modelData[0]
+                    readonly property bool possible: msg.index + step >= 0 && msg.index + step < view.count
+                    text: modelData[1]
+                    font.pixelSize: 13
+                    color: !possible ? Theme.fade(Theme.textDim, 0.3)
+                         : moveArea.containsMouse ? settings.highlightColor : Theme.textDim
+
+                    MouseArea {
+                        id: moveArea
+                        anchors.fill: parent
+                        anchors.margins: -3
+                        enabled: moveLabel.possible
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: view.moveRequested(msg.index, moveLabel.step)
+                    }
+                    ToolTip.visible: moveArea.containsMouse
+                    ToolTip.delay: 500
+                    ToolTip.text: modelData[2]
+                }
+            }
+            Label {
+                visible: view.editing
+                text: qsTr("Add turn below")
+                font.pixelSize: 11
+                color: insertArea.containsMouse ? settings.highlightColor : Theme.textDim
+
+                MouseArea {
+                    id: insertArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: view.insertRequested(msg.index + 1, view.nextRole(msg.role))
+                }
+                ToolTip.visible: insertArea.containsMouse
+                ToolTip.delay: 500
+                ToolTip.text: qsTr("Insert an empty %1 turn after this one (Ctrl+Enter).").arg(view.nextRole(msg.role))
+            }
             Label {
                 visible: view.editing
                 text: qsTr("Delete turn")

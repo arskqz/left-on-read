@@ -69,6 +69,7 @@ CREATE VIRTUAL TABLE messages_fts USING fts5(
 """
 
 _ORDER = "ORDER BY source_index IS NULL, source_index, id"
+_UI_PREFIX = "ui."
 
 
 class ProjectError(Exception):
@@ -96,7 +97,7 @@ class Project:
     def create(cls, path: str | Path, source: str | Path, schema: SchemaSpec | None = None) -> Project:
         """Import ``source`` into a new project file at ``path``.
 
-        Raises the errors of :func:`dataformatter.core.io.load`; on
+        Raises the errors of :func:`leftonread.core.io.load`; on
         SchemaDetectionError, ask the user and call again with ``schema``.
         """
         path = Path(path)
@@ -186,6 +187,30 @@ class Project:
             return SourceState.CHANGED
         return SourceState.UNCHANGED
 
+    # -- workspace state -----------------------------------------------------
+
+    # Where the user left off (queue, current conversation, ...). Stored in the
+    # project table under a "ui." prefix; not part of undo history or exports.
+
+    def ui_state(self, key: str, default: str | None = None) -> str | None:
+        return self._meta.get(_UI_PREFIX + key, default)
+
+    def set_ui_state(self, key: str, value: str | None) -> None:
+        full = _UI_PREFIX + key
+        if self._meta.get(full) == value:
+            return
+        with self._conn:
+            if value is None:
+                self._conn.execute("DELETE FROM project WHERE key = ?", (full,))
+                self._meta.pop(full, None)
+            else:
+                self._conn.execute(
+                    "INSERT INTO project (key, value) VALUES (?, ?)"
+                    " ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+                    (full, value),
+                )
+                self._meta[full] = value
+
     # -- reading -------------------------------------------------------------
 
     def count(self, statuses: str | Iterable[str] | None = None) -> int:
@@ -259,6 +284,29 @@ class Project:
         self._change(conversation.id, "edit", mutate)
         return validate(conversation)
 
+    def add_conversation(self, conversation: Conversation) -> int:
+        """Add a conversation created in the app (one undo step). Returns its id.
+
+        It gets the next free id, status unreviewed and no source position, so
+        it sorts after the imported conversations in lists and exports. The id
+        on ``conversation`` is ignored.
+        """
+        data_json, extra_json = _encode(conversation)
+        with self.batch():
+            cid = self._conn.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM conversations").fetchone()[0]
+            self._conn.execute(
+                "INSERT INTO conversations (id, source_index, data_json, extra_json, updated_at)"
+                " VALUES (?, NULL, ?, ?, ?)",
+                (cid, data_json, extra_json, _now()),
+            )
+            _index_messages(self._conn, cid, conversation.messages)
+            self._conn.execute(
+                "INSERT INTO history (group_id, conversation_id, action, before_json, after_json, ts)"
+                " VALUES (?, ?, 'create', NULL, ?, ?)",
+                (self._group, cid, json.dumps(self._snapshot(cid)), _now()),
+            )
+        return cid
+
     def set_status(self, conversation_id: int, status: str, reason: str | None = None) -> None:
         """Set keep / archive / unreviewed. ``reason`` is kept only for archive."""
         _check_status(status)
@@ -269,6 +317,20 @@ class Project:
             lambda: self._conn.execute(
                 "UPDATE conversations SET status = ?, archive_reason = ?, updated_at = ? WHERE id = ?",
                 (status, reason, _now(), conversation_id),
+            ),
+        )
+
+    def set_archive_reason(self, conversation_id: int, reason: str | None) -> None:
+        """Set or clear why an archived conversation was archived (own undo step)."""
+        if self.get(conversation_id).status != ARCHIVE:
+            raise ValueError(f"Conversation {conversation_id} is not archived.")
+        reason = (reason or "").strip() or None
+        self._change(
+            conversation_id,
+            "reason",
+            lambda: self._conn.execute(
+                "UPDATE conversations SET archive_reason = ?, updated_at = ? WHERE id = ?",
+                (reason, _now(), conversation_id),
             ),
         )
 

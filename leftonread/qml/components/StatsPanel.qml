@@ -53,6 +53,13 @@ Rectangle {
                     text: root.stats.status || ""
                     color: Theme.text
                 }
+                Label {
+                    visible: (root.stats.archiveReason || "") !== ""
+                    text: "· " + (root.stats.archiveReason || "")
+                    color: Theme.textDim
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
             }
 
             Row2 { name: qsTr("Turns"); value: root.stats.turns ?? "" }

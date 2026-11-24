@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from dataformatter.core.model import Message
-from dataformatter.core.schema import (
+from leftonread.core.model import Message
+from leftonread.core.schema import (
     OPENAI,
     SHAREGPT,
     UNSLOTH,

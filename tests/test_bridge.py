@@ -9,12 +9,12 @@ pytest.importorskip("PySide6.QtQml")
 from PySide6.QtCore import QObject, QSettings, QUrl  # noqa: E402
 from PySide6.QtGui import QColor, QGuiApplication  # noqa: E402
 
-from dataformatter.app import create_engine  # noqa: E402
-from dataformatter.bridge.backend import Backend  # noqa: E402
-from dataformatter.bridge.models import ConversationListModel, MessageListModel  # noqa: E402
-from dataformatter.bridge.settings import MAX_RECENT, AppSettings  # noqa: E402
-from dataformatter.core.model import Conversation, Message, validate  # noqa: E402
-from dataformatter.core.project import Project  # noqa: E402
+from leftonread.app import create_engine  # noqa: E402
+from leftonread.bridge.backend import Backend  # noqa: E402
+from leftonread.bridge.models import ConversationListModel, MessageListModel  # noqa: E402
+from leftonread.bridge.settings import MAX_RECENT, AppSettings, migrate_legacy_settings  # noqa: E402
+from leftonread.core.model import Conversation, Message, validate  # noqa: E402
+from leftonread.core.project import Project  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -123,6 +123,34 @@ def test_settings_recent(settings, tmp_path):
     assert settings.recentProjects[0]["exists"] is False
     settings.removeRecent(recent[0]["path"])
     assert "p5.dsproj" not in [r["name"] for r in settings.recentProjects]
+
+
+def test_migrate_legacy_settings(app, tmp_path):
+    def ini(name):
+        return QSettings(str(tmp_path / f"{name}.ini"), QSettings.Format.IniFormat)
+
+    old_dir, new_dir = tmp_path / "old" / "backdrops", tmp_path / "new" / "backdrops"
+    old_dir.mkdir(parents=True)
+    (old_dir / "sky.png").write_bytes(b"png")
+    legacy = ini("legacy")
+    legacy.setValue("appearance/highlight", "#ff8800")
+    legacy.setValue("appearance/backdrop", url(old_dir / "sky.png").toString())
+    legacy.setValue("recent/projects", '["a.dsproj"]')
+    legacy.sync()
+
+    store = ini("new")
+    assert migrate_legacy_settings(store, legacy, new_dir, old_dir)
+    assert (new_dir / "sky.png").read_bytes() == b"png" and (old_dir / "sky.png").exists()
+    migrated = AppSettings(ini("new"), new_dir)
+    assert migrated.highlightColor.name() == "#ff8800"
+    assert migrated.backdrop == url(new_dir / "sky.png").toString()
+    assert [r["path"] for r in migrated.recentProjects] == ["a.dsproj"]
+
+    # Once the new store has anything in it, it is never touched again.
+    legacy.setValue("appearance/highlight", "#123456")
+    assert not migrate_legacy_settings(ini("new"), legacy, new_dir, old_dir)
+    assert AppSettings(ini("new"), new_dir).highlightColor.name() == "#ff8800"
+    assert not migrate_legacy_settings(ini("empty"), ini("nothing"), tmp_path / "x", tmp_path / "y")
 
 
 def test_settings_backdrops(settings, tmp_path):
@@ -311,6 +339,128 @@ def test_backend_delete_message(backend, project_file, tmp_path, unsloth_sample)
     assert out.read_bytes() == unsloth_sample.read_bytes()
 
 
+def test_backend_insert_message(backend, project_file, tmp_path, unsloth_sample):
+    backend.openProject(url(project_file))
+    backend.setCurrentRow(2)  # system + 4 turns
+    backend.insertMessage(5, "user")
+    assert backend.messages.rowCount() == 6
+    assert "Last message is not from the assistant" in backend.currentStats["issues"]
+    backend.setMessageContent(5, "One more thing")
+    backend.insertMessage(6, "assistant")
+    backend.setMessageContent(6, "Sure.")
+    with Project.open(project_file) as project:
+        msgs = project.get(3).messages
+        assert [(m.role, m.content) for m in msgs[-2:]] == [("user", "One more thing"), ("assistant", "Sure.")]
+
+    backend.insertMessage(99, "user")  # out of range: ignored
+    backend.insertMessage(0, "narrator")  # unknown role: ignored
+    assert backend.messages.rowCount() == 7
+
+    out = tmp_path / "edited.json"
+    backend.exportTo(url(out), "all")
+    text = out.read_text(encoding="utf-8")
+    assert '"One more thing"' in text and '"Sure."' in text
+
+    for _ in range(4):
+        backend.undo()
+    assert backend.messages.rowCount() == 5
+    out = tmp_path / "out.json"
+    backend.exportTo(url(out), "all")
+    assert out.read_bytes() == unsloth_sample.read_bytes()
+
+
+def test_backend_move_message(backend, project_file, tmp_path, unsloth_sample):
+    backend.openProject(url(project_file))
+    backend.setCurrentRow(2)  # system, user, assistant, user, assistant
+    msgs = backend.messages
+    texts = lambda: [msgs.data(msgs.index(i)) for i in range(msgs.rowCount())]  # noqa: E731
+    before = texts()
+    backend.moveMessage(3, -1)
+    assert texts() == before[:2] + [before[3], before[2]] + before[4:]
+    assert backend.currentStats["issues"]  # user, user, assistant, assistant: no longer alternating
+    backend.moveMessage(0, -1)  # already first: ignored
+    backend.moveMessage(4, 1)  # already last: ignored
+    backend.moveMessage(1, 2)  # only single steps
+    assert backend.canUndo
+    backend.undo()
+    assert texts() == before
+    backend.exportTo(url(tmp_path / "out.json"), "all")
+    assert (tmp_path / "out.json").read_bytes() == unsloth_sample.read_bytes()
+
+
+def test_backend_new_conversation(backend, project_file, tmp_path, unsloth_sample):
+    backend.openProject(url(project_file))
+    backend.setQueue("archive")  # empty queue: a new conversation still shows up
+    assert backend.conversations.rowCount() == 0 and backend.currentRow == -1
+    backend.newConversation()
+    assert backend.conversations.rowCount() == 1 and backend.currentRow == 0
+    assert backend.totalCount == 5 and backend.currentStats["id"] == 5
+    msgs = backend.messages
+    assert msgs.rowCount() == 1
+    assert (msgs.data(msgs.index(0), msgs.RoleRole), msgs.data(msgs.index(0))) == ("user", "")
+
+    backend.setQueue("all")
+    assert backend.currentRow == 4  # still selected, last row
+    backend.close()
+    backend.openProject(url(project_file))
+    assert backend.currentStats["id"] == 5  # reopens on it
+
+    backend.undo()
+    assert backend.conversations.rowCount() == 4 and backend.totalCount == 4
+    assert backend.currentRow == 3
+    backend.exportTo(url(tmp_path / "out.json"), "all")
+    assert (tmp_path / "out.json").read_bytes() == unsloth_sample.read_bytes()
+
+
+def test_backend_resumes_where_left(settings, project_file):
+    first = Backend(settings=settings)
+    first.openProject(url(project_file))
+    first.keep()  # row 0 kept -> moves to row 1
+    first.setCurrentRow(3)
+    first.close()
+
+    again = Backend(settings=settings)
+    again.openProject(url(project_file))
+    assert again.currentRow == 3 and again.currentStats["id"] == 4
+    again.close()
+
+
+def test_backend_queues_and_archive_reason(backend, project_file):
+    archived = []
+    backend.archived.connect(archived.append)
+    backend.openProject(url(project_file))
+    assert backend.queue == "all"
+    backend.keep()  # conversation 1
+    backend.archive()  # conversation 2
+    assert archived == [2]
+    assert backend.currentStats["id"] == 3
+
+    backend.setArchiveReason(2, "repetitive")
+    backend.setArchiveReason(3, "broken")  # not archived: ignored
+    backend.setArchiveReason(99, "broken")  # unknown: ignored
+
+    backend.setQueue("archive")
+    assert backend.queue == "archive"
+    assert backend.conversations.rowCount() == 1
+    assert backend.currentStats["id"] == 2 and backend.currentStats["archiveReason"] == "repetitive"
+    backend.archive()  # re-archiving while re-reviewing keeps the reason
+    assert backend.currentStats["archiveReason"] == "repetitive"
+
+    backend.setQueue("unreviewed")
+    assert [backend.conversations.id_at(r) for r in range(backend.conversations.rowCount())] == [3, 4]
+    backend.keep()  # 3 stays listed (marked kept) until the queue is reloaded
+    assert backend.conversations.rowCount() == 2 and backend.currentStats["id"] == 4
+    backend.setQueue("unreviewed")
+    assert backend.conversations.rowCount() == 1
+
+    backend.setQueue("nonsense")
+    assert backend.queue == "unreviewed"
+    path = backend._project.path
+    backend.close()
+    backend.openProject(url(path))
+    assert backend.queue == "unreviewed" and backend.currentStats["id"] == 4
+
+
 def test_edit_mode_keyboard(app, settings, project_file):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
@@ -355,6 +505,48 @@ def test_edit_mode_keyboard(app, settings, project_file):
     key(Qt.Key.Key_D, Qt.KeyboardModifier.ControlModifier)
     assert backend.messages.rowCount() == 4
     assert backend.currentStats["turns"] == 3
+
+    # Ctrl+Enter adds a turn after the focused one (turn 1, now the assistant reply)
+    # with the alternating role, and puts the cursor in it.
+    key(Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
+    assert backend.messages.rowCount() == 5
+    msgs = backend.messages
+    assert [msgs.data(msgs.index(i), msgs.RoleRole) for i in (1, 2)] == ["assistant", "user"]
+    assert view.property("currentTurn") == 2
+    key(Qt.Key.Key_H)
+    key(Qt.Key.Key_Tab)  # leaving the turn saves it
+    assert backend.messages.data(backend.messages.index(2)) == "h"
+
+    # Alt+Up moves the focused turn (3) up; the cursor follows it, and
+    # unsaved text in it is saved first.
+    assert view.property("currentTurn") == 3
+    third = msgs.data(msgs.index(3))
+    key(Qt.Key.Key_X)  # Tab put the cursor at the start
+    key(Qt.Key.Key_Up, Qt.KeyboardModifier.AltModifier)
+    assert msgs.data(msgs.index(2)) == "x" + third and msgs.data(msgs.index(3)) == "h"
+    assert view.property("currentTurn") == 2
+
+    # After archiving, 1-4 pick a reason for the conversation just archived.
+    key(Qt.Key.Key_E, Qt.KeyboardModifier.ControlModifier)
+    toast = window.findChild(QObject, "reasonToast")
+    key(Qt.Key.Key_A)
+    assert toast.property("visible") is True and toast.property("conversationId") == 3
+    key(Qt.Key.Key_2)
+    assert toast.property("visible") is False
+    with Project.open(project_file) as project:
+        assert project.get(3).archive_reason == "out of character"
+
+    # N starts a blank conversation in edit mode with the cursor in its user turn.
+    key(Qt.Key.Key_N)
+    assert review.property("editing") is True
+    assert backend.totalCount == 5 and backend.currentStats["id"] == 5
+    assert view.property("currentTurn") == 0
+    key(Qt.Key.Key_H)
+    key(Qt.Key.Key_N)  # while typing, N is a letter
+    key(Qt.Key.Key_E, Qt.KeyboardModifier.ControlModifier)  # done: saves
+    assert backend.messages.data(backend.messages.index(0)) == "hn"
+    assert backend.totalCount == 5
+    review.setEditing(True)
 
     key(Qt.Key.Key_E, Qt.KeyboardModifier.ControlModifier)
     assert review.property("editing") is False

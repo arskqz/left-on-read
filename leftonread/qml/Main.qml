@@ -10,7 +10,7 @@ ApplicationWindow {
     minimumWidth: 860
     minimumHeight: 540
     visible: true
-    title: backend.hasProject ? backend.title + " - dataformatter" : "dataformatter"
+    title: backend.hasProject ? backend.title + " - Left on Read" : "Left on Read"
     color: settings.backgroundColor
 
     property string mode: "review"  // review | finder
@@ -286,7 +286,7 @@ ApplicationWindow {
 
     Dialog {
         id: messageDialog
-        title: "dataformatter"
+        title: "Left on Read"
         modal: true
         anchors.centerIn: parent
         standardButtons: Dialog.Ok

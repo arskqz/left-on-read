@@ -4,9 +4,9 @@ import shutil
 import pytest
 
 from conftest import SAMPLE_FILES
-from dataformatter.core import io
-from dataformatter.core.model import Message
-from dataformatter.core.project import Project, ProjectError, SourceState
+from leftonread.core import io
+from leftonread.core.model import Message
+from leftonread.core.project import Project, ProjectError, SourceState
 
 
 @pytest.fixture
@@ -54,6 +54,63 @@ def test_export_filters_by_status_and_is_clean(project, tmp_path):
 def test_archive_reason_only_kept_for_archive(project):
     project.set_status(1, "keep", reason="ignored")
     assert project.get(1).archive_reason is None
+
+
+def test_set_archive_reason(project, tmp_path):
+    with pytest.raises(ValueError):
+        project.set_archive_reason(1, "broken")  # not archived
+    project.set_status(1, "archive")
+    project.set_archive_reason(1, "  broken ")
+    assert project.get(1).archive_reason == "broken"
+    project.set_archive_reason(1, "")
+    assert project.get(1).archive_reason is None
+    project.undo()
+    assert project.get(1).archive_reason == "broken"
+    project.undo()
+    assert project.get(1).archive_reason is None and project.get(1).status == "archive"
+
+    out = tmp_path / "out.json"
+    project.set_archive_reason(1, "broken")
+    project.export(out)
+    assert "broken" not in out.read_text(encoding="utf-8")
+
+
+def test_add_conversation(project, unsloth_sample, tmp_path):
+    from leftonread.core.model import Conversation
+
+    cid = project.add_conversation(Conversation(messages=[Message("user", "Hello there")], id=999))
+    assert cid == 5
+    assert project.get(cid).status == "unreviewed" and project.count() == 5
+    assert project.ids()[-1] == cid  # after the imported ones
+    project.add_tag(cid, "new")
+    project.close()
+
+    with Project.open(project.path) as p:
+        out = tmp_path / "out.json"
+        p.export(out)
+        items = json.loads(out.read_text(encoding="utf-8"))
+        assert items[-1] == {"conversations": [{"role": "user", "content": "Hello there"}]}
+
+        p.undo()  # the tag
+        p.undo()  # the creation
+        assert p.count() == 4
+        with pytest.raises(KeyError):
+            p.get(cid)
+        assert p._conn.execute("SELECT COUNT(*) FROM tags").fetchone()[0] == 0
+        p.export(out)
+    assert out.read_bytes() == unsloth_sample.read_bytes()
+
+
+def test_ui_state(project):
+    assert project.ui_state("current") is None
+    assert project.ui_state("queue", "all") == "all"
+    project.set_ui_state("current", "3")
+    project.set_ui_state("queue", "archive")
+    project.set_ui_state("queue", None)
+    assert not project.can_undo  # not part of history
+    project.close()
+    with Project.open(project.path) as p:
+        assert p.ui_state("current") == "3" and p.ui_state("queue") is None
 
 
 def test_edit_and_undo(project):

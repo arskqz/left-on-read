@@ -97,7 +97,7 @@ RowLayout {
             spacing: 10
 
             Label {
-                text: "dataformatter"
+                text: "Left on Read"
                 color: Theme.text
                 font.pixelSize: 26
                 Layout.alignment: Qt.AlignHCenter

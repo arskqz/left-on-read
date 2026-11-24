@@ -2,7 +2,7 @@
 
 Everything here uses the internal representation: ``role``/``content`` with
 system / user / assistant roles. Mapping to and from the spelling used in a
-file happens only at the file boundary, in :mod:`dataformatter.core.schema`.
+file happens only at the file boundary, in :mod:`leftonread.core.schema`.
 """
 
 from __future__ import annotations
@@ -15,6 +15,9 @@ ROLES = (SYSTEM, USER, ASSISTANT)
 
 UNREVIEWED, KEEP, ARCHIVE = "unreviewed", "keep", "archive"
 STATUSES = (UNREVIEWED, KEEP, ARCHIVE)
+
+# Quick picks offered after archiving. Any other text is allowed too.
+ARCHIVE_REASONS = ("repetitive", "out of character", "broken", "other")
 
 
 @dataclass

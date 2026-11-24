@@ -7,6 +7,7 @@ the network: the backdrops folder is a local directory the user fills.
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 from PySide6.QtCore import Property, QObject, QSettings, QStandardPaths, QUrl, Signal, Slot
@@ -21,6 +22,28 @@ BACKDROP_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 def default_backdrops_dir() -> Path:
     base = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
     return Path(base) / "backdrops"
+
+
+LEGACY_NAME = "dataformatter"  # organisation and application name before the rename
+
+
+def migrate_legacy_settings(store: QSettings, legacy: QSettings, backdrops_dir: Path, legacy_backdrops_dir: Path) -> bool:
+    """Copy settings and backdrops saved under the app's old name, once.
+
+    Runs only while the new store is empty, so it never overwrites anything.
+    The old settings and files are left in place. Returns True if it copied.
+    """
+    if store.allKeys() or not legacy.allKeys():
+        return False
+    for key in legacy.allKeys():
+        store.setValue(key, legacy.value(key))
+    if legacy_backdrops_dir.is_dir() and not backdrops_dir.exists():
+        shutil.copytree(legacy_backdrops_dir, backdrops_dir)
+        backdrop = Path(QUrl(str(store.value("appearance/backdrop", "") or "")).toLocalFile())
+        if backdrop.parent == legacy_backdrops_dir:
+            store.setValue("appearance/backdrop", QUrl.fromLocalFile(str(backdrops_dir / backdrop.name)).toString())
+    store.sync()
+    return True
 
 
 class AppSettings(QObject):

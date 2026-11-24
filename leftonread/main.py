@@ -14,7 +14,7 @@ MAX_LISTED_ISSUES = 10
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="dataformatter")
+    parser = argparse.ArgumentParser(prog="leftonread")
     commands = parser.add_subparsers(dest="command")
     check = commands.add_parser(
         "check",
